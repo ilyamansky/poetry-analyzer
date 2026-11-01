@@ -1,0 +1,4 @@
+fastapi
+uvicorn[standard]
+pymorphy3
+git+https://github.com/RussianNLP/RussianPoetryScansionTool.git
