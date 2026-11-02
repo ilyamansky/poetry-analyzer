@@ -1,8 +1,6 @@
 # backend/main.py
 import logging
-import os
 import re
-import time
 from typing import List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -11,50 +9,62 @@ from pydantic import BaseModel
 
 import pymorphy3
 
-# --- Морфологический анализатор (быстрый, инициализируем сразу) ---
+# ============================================================
+# Морфологический анализатор (pymorphy3)
+# ============================================================
 print("Инициализация морфологического анализатора...")
-_t_morph = time.perf_counter()
 morph = pymorphy3.MorphAnalyzer()
-print(f"[INIT] pymorphy3 loaded in {time.perf_counter() - _t_morph:.3f}s")
 
-# --- RPST: ленивый (dev) или нетерпеливый (production) ---
-# Управляется переменной окружения RPST_EAGER=1.
-# - dev (uvicorn --reload): без переменной → ленивая загрузка, чтобы
-#   каждое сохранение файла не ждало 30+ секунд перезагрузки модели.
-# - production (gunicorn --preload -w 4): с RPST_EAGER=1 → модель грузится
-#   в master-процесс до форка воркеров, все воркеры наследуют её через
-#   copy-on-write. Первый пользователь не ждёт.
-_rpst_tool = None
+# ============================================================
+# RPST — ВРЕМЕННО ОТКЛЮЧЁН ДЛЯ ДЕПЛОЯ НА VERCEL
+# ============================================================
+# Причина: RPST — тяжёлая CPU-bound модель (~500 МБ, ~36 сек на загрузку,
+# ~0.3 сек на стих). Не влезает в бесплатные лимиты Vercel и требует
+# сервера с достаточной RAM и CPU. Бэкенд теперь работает только в режиме
+# лемматизации. Всё остальное (сеть, дисперсия, коллокации, keyness,
+# повторы, похожие стихи и т.д.) считается на фронтенде в браузере.
+#
+# Чтобы вернуть RPST:
+#   1. Раскомментировать блок ниже и импорты `os`, `time`.
+#   2. Раскомментировать `scan_text` и ветку mode="full" в `analyze_text`.
+#   3. Вернуть `russian_scansion` в requirements.txt.
+#   4. Развернуть не на Vercel, а на сервере с RAM ≥ 4 ГБ.
+#   5. Собрать фронт без режима "lemmas-only".
+# ============================================================
 
-
-def _load_rpst():
-    """Загружает RPST и возвращает tool. Вызывается один раз."""
-    global _rpst_tool
-    if _rpst_tool is not None:
-        return _rpst_tool
-    print("Загрузка RPST...")
-    _t_load = time.perf_counter()
-    import russian_scansion
-
-    models_dir = os.path.join(os.path.dirname(__file__), "models")
-    print(f"Модели: {models_dir}")
-    _rpst_tool = russian_scansion.create_rpst_instance(models_dir=models_dir)
-    print(f"[RPST LOAD] done in {time.perf_counter() - _t_load:.3f}s")
-    return _rpst_tool
-
-
-def get_rpst_tool():
-    """Возвращает RPST, загружая при первом вызове (если ещё не загружен)."""
-    return _load_rpst()
-
-
-_RPST_EAGER = os.environ.get("RPST_EAGER") == "1"
-if _RPST_EAGER:
-    # production: грузим сразу, до старта сервера и форка воркеров.
-    print("[RPST EAGER] RPST_EAGER=1 → загрузка при старте")
-    _load_rpst()
-else:
-    print("[RPST LAZY] RPST_EAGER!=1 → загрузка при первом запросе")
+# import os
+# import time
+#
+# _rpst_tool = None
+#
+#
+# def _load_rpst():
+#     """Загружает RPST и возвращает tool. Вызывается один раз."""
+#     global _rpst_tool
+#     if _rpst_tool is not None:
+#         return _rpst_tool
+#     print("Загрузка RPST...")
+#     t_load = time.perf_counter()
+#     import russian_scansion
+#
+#     models_dir = os.path.join(os.path.dirname(__file__), "models")
+#     print(f"Модели: {models_dir}")
+#     _rpst_tool = russian_scansion.create_rpst_instance(models_dir=models_dir)
+#     print(f"[RPST LOAD] done in {time.perf_counter() - t_load:.3f}s")
+#     return _rpst_tool
+#
+#
+# def get_rpst_tool():
+#     """Возвращает RPST, загружая при первом вызове (если ещё не загружен)."""
+#     return _load_rpst()
+#
+#
+# _RPST_EAGER = os.environ.get("RPST_EAGER") == "1"
+# if _RPST_EAGER:
+#     print("[RPST EAGER] RPST_EAGER=1 → загрузка при старте")
+#     _load_rpst()
+# else:
+#     print("[RPST LAZY] RPST_EAGER!=1 → загрузка при первом запросе")
 
 
 app = FastAPI(title="Poetry Analyzer API")
@@ -77,7 +87,7 @@ AnalysisMode = Literal["full", "lemmas"]
 
 class AnalyzeRequest(BaseModel):
     text: str
-    mode: AnalysisMode = "full"
+    mode: AnalysisMode = "lemmas"
 
 
 class TokenAnalysis(BaseModel):
@@ -90,6 +100,8 @@ class TokenAnalysis(BaseModel):
 class AnalyzeResponse(BaseModel):
     lemmas: List[str]
     tokens: List[TokenAnalysis]
+    # Поля ниже оставлены для совместимости с фронтом (он их читает как null).
+    # Пока RPST отключён — всегда None.
     meter: Optional[str] = None
     rhyme_scheme: Optional[str] = None
     scansion_score: Optional[float] = None
@@ -99,7 +111,7 @@ class AnalyzeResponse(BaseModel):
 class BatchItem(BaseModel):
     id: str
     text: str
-    mode: AnalysisMode = "full"
+    mode: AnalysisMode = "lemmas"
 
 
 class BatchRequest(BaseModel):
@@ -116,9 +128,6 @@ class BatchResponse(BaseModel):
 
 
 MAX_BATCH_ITEMS = 50
-
-# Счётчик запросов для логов
-_analyze_counter = 0
 
 
 def lemmatize_text(text: str) -> tuple[List[str], List[TokenAnalysis]]:
@@ -146,68 +155,47 @@ def lemmatize_text(text: str) -> tuple[List[str], List[TokenAnalysis]]:
     return lemmas, token_analyses
 
 
-def scan_text(text: str) -> AnalyzeResponse:
-    """Разбор RPST: размер, рифма, ударения. При сбое — поля null."""
-    try:
-        tool = get_rpst_tool()
-        lines = [line for line in text.split("\n") if line.strip()]
-        if not lines:
-            return AnalyzeResponse(lemmas=[], tokens=[])
-
-        scansion = tool.align(lines)
-
-        stressed_raw = scansion.get_stressed_lines(show_secondary_accentuation=True)
-        stressed_lines = (
-            stressed_raw.splitlines() if isinstance(stressed_raw, str) else stressed_raw
-        )
-
-        return AnalyzeResponse(
-            lemmas=[],
-            tokens=[],
-            meter=getattr(scansion, "meter", None),
-            rhyme_scheme=getattr(scansion, "rhyme_scheme", None),
-            scansion_score=getattr(scansion, "score", None),
-            stressed_lines=stressed_lines,
-        )
-    except Exception:
-        logging.exception("RPST analysis failed")
-        return AnalyzeResponse(lemmas=[], tokens=[])
+# ============================================================
+# RPST — scan_text (закомментирован вместе с остальным RPST)
+# ============================================================
+# def scan_text(text: str) -> AnalyzeResponse:
+#     """Разбор RPST: размер, рифма, ударения. При сбое — поля null."""
+#     try:
+#         tool = get_rpst_tool()
+#         lines = [line for line in text.split("\n") if line.strip()]
+#         if not lines:
+#             return AnalyzeResponse(lemmas=[], tokens=[])
+#
+#         scansion = tool.align(lines)
+#
+#         stressed_raw = scansion.get_stressed_lines(show_secondary_accentuation=True)
+#         stressed_lines = (
+#             stressed_raw.splitlines() if isinstance(stressed_raw, str) else stressed_raw
+#         )
+#
+#         return AnalyzeResponse(
+#             lemmas=[],
+#             tokens=[],
+#             meter=getattr(scansion, "meter", None),
+#             rhyme_scheme=getattr(scansion, "rhyme_scheme", None),
+#             scansion_score=getattr(scansion, "score", None),
+#             stressed_lines=stressed_lines,
+#         )
+#     except Exception:
+#         logging.exception("RPST analysis failed")
+#         return AnalyzeResponse(lemmas=[], tokens=[])
 
 
 def analyze_text(text: str, mode: AnalysisMode) -> AnalyzeResponse:
-    global _analyze_counter
-    _analyze_counter += 1
-    counter = _analyze_counter
+    """Пока RPST отключён — всегда только лемматизация.
 
-    t_start = time.perf_counter()
+    Параметр `mode` принимается для совместимости с фронтом (он шлёт
+    "full" или "lemmas"), но игнорируется: оба режима дают одинаковый
+    результат. Когда RPST вернётся — здесь снова появится ветка if.
+    """
+    _ = mode  # намеренно игнорируем
     lemmas, tokens = lemmatize_text(text)
-    t_lemmas = time.perf_counter()
-
-    if mode == "lemmas":
-        dur_lemmas = t_lemmas - t_start
-        print(
-            f"[ANALYZE #{counter}] mode=lemmas total={dur_lemmas:.3f}s "
-            f"lemmas={dur_lemmas:.3f}s rpst=0.000s"
-        )
-        return AnalyzeResponse(lemmas=lemmas, tokens=tokens)
-
-    scansion = scan_text(text)
-    t_rpst = time.perf_counter()
-    dur_lemmas = t_lemmas - t_start
-    dur_rpst = t_rpst - t_lemmas
-    dur_total = t_rpst - t_start
-    print(
-        f"[ANALYZE #{counter}] mode=full total={dur_total:.3f}s "
-        f"lemmas={dur_lemmas:.3f}s rpst={dur_rpst:.3f}s"
-    )
-    return AnalyzeResponse(
-        lemmas=lemmas,
-        tokens=tokens,
-        meter=scansion.meter,
-        rhyme_scheme=scansion.rhyme_scheme,
-        scansion_score=scansion.scansion_score,
-        stressed_lines=scansion.stressed_lines,
-    )
+    return AnalyzeResponse(lemmas=lemmas, tokens=tokens)
 
 
 @app.get("/")
@@ -231,10 +219,6 @@ def analyze_batch(request: BatchRequest):
             detail=f"Too many items: {len(request.items)} (max {MAX_BATCH_ITEMS}).",
         )
 
-    t_batch = time.perf_counter()
-    ok = 0
-    err = 0
-
     results: List[BatchResult] = []
     for item in request.items:
         if not item.text.strip():
@@ -243,23 +227,12 @@ def analyze_batch(request: BatchRequest):
                     id=item.id, lemmas=[], tokens=[], error="Text cannot be empty."
                 )
             )
-            err += 1
             continue
         try:
             response = analyze_text(item.text, item.mode)
             results.append(BatchResult(id=item.id, **response.model_dump()))
-            ok += 1
         except Exception as e:
             logging.exception("Batch item failed: %s", item.id)
             results.append(BatchResult(id=item.id, lemmas=[], tokens=[], error=str(e)))
-            err += 1
-
-    dur_batch = time.perf_counter() - t_batch
-    n = len(request.items)
-    avg = dur_batch / n if n > 0 else 0
-    print(
-        f"[BATCH] n={n} ok={ok} err={err} "
-        f"total={dur_batch:.3f}s avg={avg:.3f}s/item"
-    )
 
     return BatchResponse(results=results)

@@ -1,4 +1,17 @@
 // src/components/AnalysisBanner.tsx
+//
+// ВАЖНО (временно): RPST отключён на бэкенде для деплоя на Vercel.
+// Сейчас работает только лемматизация (mode="lemmas"). Кнопка
+// «Полный анализ» видна, но замьючена (disabled + title). Всё, что
+// связано с RPST (withFull, needFull, кнопка «Полный анализ»), оставлено
+// в коде, чтобы легко вернуть, когда появится сервер с RAM ≥ 4 ГБ.
+// Чтобы вернуть:
+//   1. Раскомментировать RPST-блоки в backend/main.py и requirements.txt.
+//   2. Развернуть не на Vercel, а на VPS.
+//   3. В этом файле: убрать `disabled` и `title` с кнопки «Полный анализ»,
+//      поменять `allLemmatized` обратно на `withFull === total`,
+//      и вернуть `start(poems, "full")` в «Пересчитать».
+
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { isFullAnalysis } from "../lib/api";
@@ -29,6 +42,10 @@ export default function AnalysisBanner() {
   const withFull = poems.filter(
     (p) => analyses[p.id] && isFullAnalysis(analyses[p.id]),
   ).length;
+
+  // RPST отключён → «завершено» теперь = все лемматизированы.
+  // Когда RPST вернётся: заменить на `total > 0 && withFull === total`.
+  const allLemmatized = total > 0 && withLemmas === total;
 
   // ─── Идёт анализ: прогресс-бар ──────────────────────────────
   if (runningMode && progress) {
@@ -67,14 +84,14 @@ export default function AnalysisBanner() {
     );
   }
 
-  // ─── Всё проанализировано: тонкая строка ────────────────────
-  if (total > 0 && withFull === total) {
+  // ─── Всё лемматизировано: тонкая строка ────────────────────
+  if (allLemmatized) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
         <span>
           ✓ Все {total}{" "}
           {plural(total, "стихотворение", "стихотворения", "стихотворений")}{" "}
-          проанализированы
+          проанализированы (лемматизация)
           {lastFailed.length > 0 && (
             <span className="ml-2 text-amber-700">
               · последний запуск с ошибками: {lastFailed.length}
@@ -95,13 +112,14 @@ export default function AnalysisBanner() {
             onClick={() => {
               if (
                 confirm(
-                  "Пересчитать анализ заново для всего корпуса? Текущие результаты будут удалены.",
+                  "Пересчитать лемматизацию заново для всего корпуса? Текущие результаты будут удалены.",
                 )
               ) {
                 clearAll();
                 clearFailed();
                 clearLastError();
-                void start(poems, "full");
+                // RPST вернётся: заменить на `void start(poems, "full")`.
+                void start(poems, "lemmas");
               }
             }}
             className="text-xs text-slate-600 hover:text-slate-900"
@@ -125,7 +143,7 @@ export default function AnalysisBanner() {
 
   // ─── Не завершено: основной баннер ─────────────────────────
   const notAnalyzed = total - withLemmas;
-  const needFull = withLemmas - withFull;
+  const needFull = withLemmas - withFull; // используется только для замьюченной кнопки
 
   return (
     <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -136,11 +154,18 @@ export default function AnalysisBanner() {
             : "Лингвистический анализ не завершён"}
         </strong>
         <span className="text-xs text-amber-800">
-          {withFull === 0
+          {/* Текст обновлён: RPST выключен, размеры/рифма/уверенность
+              пока недоступны. Старый текст оставлен в комментарии. */}
+          {/* {withFull === 0
             ? "Без него недоступны размеры, части речи, леммы, уверенность и рифма."
             : lastCancelled
               ? `Проанализировано ${withFull} из ${total}.`
-              : `Полностью проанализировано ${withFull} из ${total}.`}
+              : `Полностью проанализировано ${withFull} из ${total}.`} */}
+          {lastCancelled
+            ? `Лемматизировано ${withLemmas} из ${total}.`
+            : withLemmas === 0
+              ? "Без лемматизации недоступны частоты, коллокации, сеть, дисперсия, конкорданс и портрет слова."
+              : `Лемматизировано ${withLemmas} из ${total}.`}
         </span>
       </div>
 
@@ -161,32 +186,31 @@ export default function AnalysisBanner() {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          onClick={() => void start(poems, "full")}
-          disabled={needFull === 0 && notAnalyzed === 0}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-          type="button"
-        >
-          {withFull === 0
-            ? lastCancelled
-              ? `Продолжить полный анализ (${total})`
-              : `Полный анализ (${total})`
-            : needFull > 0
-              ? `Доанализировать полным (${needFull})`
-              : "Полный анализ выполнен"}
-        </button>
-
+        {/* Основная кнопка теперь — лемматизация (быстрая, работает на Vercel) */}
         {notAnalyzed > 0 && (
           <button
             onClick={() => void start(poems, "lemmas")}
-            className="rounded-lg border border-slate-400 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-100"
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
             type="button"
           >
             {withLemmas === 0
-              ? `Только леммы (быстро) (${total})`
+              ? `Лемматизация (${total})`
               : `Доанализировать леммы (${notAnalyzed})`}
           </button>
         )}
+
+        {/* ─── RPST: кнопка видна, но замьючена ───
+            ВАЖНО: чтобы вернуть, убрать disabled и title, и вернуть
+            `void start(poems, "full")` в onClick. */}
+        <button
+          onClick={() => void start(poems, "full")}
+          disabled
+          title="Полный анализ (RPST) временно недоступен: требует сервера с RAM ≥ 4 ГБ. Сейчас работает только лемматизация."
+          className="cursor-not-allowed rounded-lg border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-400 opacity-60"
+          type="button"
+        >
+          Полный анализ (размер) — недоступно
+        </button>
 
         {withLemmas > 0 && (
           <button
@@ -215,6 +239,12 @@ export default function AnalysisBanner() {
           к списку стихов
         </Link>
       </div>
+
+      {/* needFull используется только для расчёта disabled замьюченной
+          кнопки; чтобы избежать «unused variable», оставляем ссылку. */}
+      <span className="sr-only">
+        Не проанализировано полным анализом: {needFull}
+      </span>
 
       {lastFailed.length > 0 && (
         <div>

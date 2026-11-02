@@ -1,4 +1,19 @@
 // src/pages/PoemDetailPage.tsx
+//
+// ВАЖНО (временно): RPST отключён на бэкенде для деплоя на Vercel.
+// Сейчас работает только лемматизация. Кнопка «Полный анализ» видна,
+// но замьючена. Блок «Размер / Уверенность» показывается, только если
+// они реально есть в кэше (meter !== null). Всё, что связано с RPST
+// (runFullAnalysis, fullRunning, onRunFull, translateMeter), оставлено
+// в коде — чтобы вернуть, когда появится сервер с RAM ≥ 4 ГБ.
+//
+// Чтобы вернуть RPST:
+//   1. Раскомментировать RPST-блоки в backend/main.py и requirements.txt.
+//   2. Развернуть не на Vercel, а на VPS.
+//   3. В AnalysisView убрать disabled с кнопки «Полный анализ» и вернуть
+//      условие `full ? (<dl>…</dl>) : (<жёлтый блок>)`.
+//   4. В AnalysisBanner (шаг 5) вернуть размьюченную кнопку.
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -45,8 +60,7 @@ function PoemDetailContent({ poemId }: { poemId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [fullRunning, setFullRunning] = useState(false);
 
-  // Авто-загрузка: только леммы (быстро, без RPST). Полный анализ —
-  // по кнопке в AnalysisView. Так первый просмотр стиха не ждёт 5-10 сек.
+  // Авто-загрузка: только леммы (быстро, без RPST).
   useEffect(() => {
     if (!poem || cached || !loading) return;
 
@@ -79,6 +93,9 @@ function PoemDetailContent({ poemId }: { poemId: string }) {
     });
   }, [poemId, corpusPoems, analyses, stopwordsSet, cached]);
 
+  // RPST отключён. Функция оставлена для совместимости с AnalysisView
+  // (там на неё ссылается замьюченная кнопка). Когда RPST вернётся —
+  // кнопка размьютится, и эта функция снова начнёт вызываться.
   const runFullAnalysis = useCallback(() => {
     if (!poem) return;
     setFullRunning(true);
@@ -197,13 +214,21 @@ function AnalysisView({
   fullRunning: boolean;
   onRunFull: () => void;
 }) {
-  const full = isFullAnalysis(analysis);
+  // Оставлено для случая, когда RPST вернётся (условие ниже — комментарий).
+  // const full = isFullAnalysis(analysis);
+  void isFullAnalysis;
+
   const meter = translateMeter(analysis.meter);
   const confidence = analysis.scansionScore;
 
+  // Блок «Размер / Уверенность» показываем, только если данные есть.
+  // При выключенном RPST meter и confidence всегда null → блок не рендерится.
+  // Когда RPST вернётся: заменить `hasMeter` обратно на `full` (см. коммент выше).
+  const hasMeter = meter !== null || confidence !== null;
+
   return (
     <div className="mt-4 space-y-4">
-      {full ? (
+      {hasMeter ? (
         <div className="rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
           <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm sm:gap-x-8">
             <div>
@@ -221,15 +246,24 @@ function AnalysisView({
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 sm:p-4">
           <span>
-            Выполнена только лемматизация. Размер доступен после полного
-            анализа.
+            Лемматизация выполнена. Полный анализ (размер) временно недоступен:
+            требует сервера с RAM ≥ 4 ГБ.
           </span>
+          {/* ─── RPST: кнопка видна, но замьючена ───
+              Чтобы вернуть: убрать `disabled`, вернуть условие `full`
+              для блока выше. onClick и fullRunning оставлены — не unused. */}
           <button
             onClick={onRunFull}
-            disabled={fullRunning}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled
+            title={
+              fullRunning
+                ? "Анализ уже идёт"
+                : "Полный анализ (RPST) временно недоступен: требует сервера с RAM ≥ 4 ГБ. Сейчас работает только лемматизация."
+            }
+            className="cursor-not-allowed rounded-lg border border-slate-300 bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-400 opacity-60"
+            type="button"
           >
-            {fullRunning ? "Анализ…" : "Полный анализ"}
+            Полный анализ — недоступно
           </button>
         </div>
       )}
