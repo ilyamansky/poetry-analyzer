@@ -69,15 +69,26 @@ morph = pymorphy3.MorphAnalyzer()
 
 app = FastAPI(title="Poetry Analyzer API")
 
+# ─── CORS ────────────────────────────────────────────────────────────────
+# allow_origins — явный список разрешённых доменов фронтенда.
+# allow_origin_regex — на случай, если Vercel выдаст preview-домен
+# с другим хешем (например, poetry-analyzer-f919-<hash>-...vercel.app).
+# Regex покрывает все preview и production URL проекта:
+#   poetry-analyzer-f919.vercel.app
+#   poetry-analyzer-f919-git-main-ilyamanskys-projects.vercel.app
+#   poetry-analyzer-f919-kzvfvftpm-ilyamanskys-projects.vercel.app
+#   ...любой будущий preview этого проекта
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "https://poetry-analyzer-f919.vercel.app",
+    "https://poetry-analyzer-f919-git-main-ilyamanskys-projects.vercel.app",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"https://poetry-analyzer-f919.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
