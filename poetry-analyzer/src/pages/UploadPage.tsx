@@ -1,10 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import FileUpload from "../components/FileUpload";
-import { parsePoems } from "../lib/parser";
+import { parsePoemsDetailed } from "../lib/parser";
 import { plural } from "../lib/plural";
 import { usePoemsStore } from "../store/poemsStore";
 import { useAnalysisStore } from "../store/analysisStore";
+
+const LARGE_CORPUS_THRESHOLD = 500;
+
+function estimateAnalysisMinutes(poemCount: number): number {
+  const seconds = poemCount * 0.05 + 10;
+  return Math.max(1, Math.ceil(seconds / 60));
+}
 
 export default function UploadPage() {
   const navigate = useNavigate();
@@ -19,15 +26,36 @@ export default function UploadPage() {
 
   const handleFile = (text: string, name: string) => {
     setError(null);
-    const poems = parsePoems(text);
-    if (poems.length === 0) {
+    const result = parsePoemsDetailed(text);
+
+    if (result.poems.length === 0) {
       setError(
-        "Не удалось найти ни одного стихотворения. Проверьте разделители ***.",
+        "Не найдено ни одного стихотворения. Проверьте содержимое файла.",
       );
       return;
     }
+
+    if (!result.hasSeparator && result.totalLength > 50_000) {
+      setError(
+        `В файле нет разделителя ***, а объём ${Math.round(result.totalLength / 1024)} КБ. ` +
+          `Весь текст попадёт в одно «стихотворение», и лемматизация может не уложиться в лимит. ` +
+          `Добавьте строку *** между стихами и загрузите снова.`,
+      );
+      return;
+    }
+
+    if (result.poems.length > LARGE_CORPUS_THRESHOLD) {
+      const minutes = estimateAnalysisMinutes(result.poems.length);
+      const ok = window.confirm(
+        `Загружено ${result.poems.length} ${plural(result.poems.length, "стихотворение", "стихотворения", "стихотворений")}.\n\n` +
+          `Лемматизация такого корпуса займёт примерно ${minutes} ${plural(minutes, "минуту", "минуты", "минут")} и требует, чтобы вкладка была открыта до конца.\n\n` +
+          `Продолжить?`,
+      );
+      if (!ok) return;
+    }
+
     clearAnalyses();
-    setPoems(poems, name);
+    setPoems(result.poems, name);
     navigate("/poems");
   };
 
@@ -46,9 +74,21 @@ export default function UploadPage() {
       <div>
         <h1 className="text-xl font-semibold sm:text-2xl">Загрузка корпуса</h1>
         <p className="mt-1 text-sm text-slate-600 sm:text-base">
-          Файл со стихами, разделёнными строкой{" "}
+          Файл <code className="rounded bg-slate-200 px-1">.txt</code> в
+          кодировке <strong>UTF-8</strong>, размером <strong>до 1 МБ</strong>{" "}
+          (это ~1500–3000 стихов). Стихи разделяются строкой{" "}
           <code className="rounded bg-slate-200 px-1">***</code>.
         </p>
+        <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-slate-500">
+          <li>
+            Только русский текст — другие языки дадут бессмысленные леммы.
+          </li>
+          <li>Файлы в Windows-1251 или UTF-16 не принимаются.</li>
+          <li>
+            Если файл не открывается в UTF-8 — сохраните его в VS Code или
+            Notepad++ как «UTF-8 без BOM».
+          </li>
+        </ul>
       </div>
 
       <FileUpload onFile={handleFile} />
