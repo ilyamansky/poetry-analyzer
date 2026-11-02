@@ -72,6 +72,7 @@ app = FastAPI(title="Poetry Analyzer API")
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://poetry-analyzer-f919.vercel.app",
 ]
 
 app.add_middleware(
