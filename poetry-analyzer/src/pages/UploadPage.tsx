@@ -76,16 +76,14 @@ export default function UploadPage() {
         <p className="mt-1 text-sm text-slate-600 sm:text-base">
           Файл <code className="rounded bg-slate-200 px-1">.txt</code> в
           кодировке <strong>UTF-8</strong>, размером <strong>до 1 МБ</strong>{" "}
-          (это ~1500–3000 стихов). Стихи разделяются строкой{" "}
+          (это 1500–3000 стихов). Стихи разделяются строкой, и никак иначе:{" "}
           <code className="rounded bg-slate-200 px-1">***</code>.
         </p>
         <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-slate-500">
-          <li>
-            Только русский текст — другие языки дадут бессмысленные леммы.
-          </li>
+          <li>Только русский текст, другие языки дадут бессмысленные леммы.</li>
           <li>Файлы в Windows-1251 или UTF-16 не принимаются.</li>
           <li>
-            Если файл не открывается в UTF-8 — сохраните его в VS Code или
+            Если файл не открывается в UTF-8, сохраните его в VS Code или
             Notepad++ как «UTF-8 без BOM».
           </li>
         </ul>

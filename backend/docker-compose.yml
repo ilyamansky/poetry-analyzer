@@ -1,0 +1,15 @@
+services:
+  backend:
+    build: .
+    container_name: poetry-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - RPST_EAGER=1
+      - PYTHONUNBUFFERED=1
+    # Если понадобится больше памяти под модель — раскомментируйте:
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 4G
